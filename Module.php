@@ -1,6 +1,6 @@
 <?php
 
-namespace rico\yii2images;
+namespace rere\image;
 
 
 use rico\yii2images\models\PlaceHolder;

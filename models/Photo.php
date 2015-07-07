@@ -1,6 +1,6 @@
 <?php
 
-namespace rere\core\models;
+namespace rere\image\models;
 
 use Yii;
 use yii\base\Exception;
@@ -12,8 +12,8 @@ use yii\helpers\Url;
  *
  * @property string $id
  * @property string $sort_id
- * @property string $page_id
- * @property integer $user_id
+ * @property string $owner_id
+ * @property integer $model
  * @property string $type
  * @property string $name
  * @property string $width
@@ -23,9 +23,6 @@ use yii\helpers\Url;
  * @property string $hash
  * @property string $updated_at
  * @property string $created_at
- *
- * @property Page $page
- * @property User $user
  */
 class Photo extends \yii\db\ActiveRecord
 {
@@ -58,7 +55,7 @@ class Photo extends \yii\db\ActiveRecord
     {
         return [
             [['name'], 'required'],
-            [['sort_id', 'page_id', 'user_id', 'width', 'height'], 'integer'],
+            [['sort_id', 'width', 'height'], 'integer'],
             [['updated_at', 'created_at'], 'safe'],
             [['type'], 'string', 'max' => 8],
             [['name', 'about', 'cropParams'], 'string', 'max' => 255],
@@ -74,8 +71,6 @@ class Photo extends \yii\db\ActiveRecord
         return [
             'id' => Yii::t('rere.model', 'ID'),
             'sort_id' => Yii::t('rere.model', 'Sort ID'),
-            'page_id' => Yii::t('rere.model', 'Page ID'),
-            'user_id' => Yii::t('rere.model', 'User ID'),
             'type' => Yii::t('rere.model', 'Type'),
             'name' => Yii::t('rere.model', 'Name'),
             'width' => Yii::t('rere.model', 'Width'),
@@ -86,22 +81,6 @@ class Photo extends \yii\db\ActiveRecord
             'updated_at' => Yii::t('rere.model', 'Updated At'),
             'created_at' => Yii::t('rere.model', 'Created At'),
         ];
-    }
-
-    /**
-     * @return \yii\db\ActiveQuery
-     */
-    public function getPage()
-    {
-        return $this->hasOne(Page::className(), ['id' => 'page_id']);
-    }
-
-    /**
-     * @return \yii\db\ActiveQuery
-     */
-    public function getUser()
-    {
-        return $this->hasOne(User::className(), ['id' => 'user_id']);
     }
 
     public function beforeSave($insert)
