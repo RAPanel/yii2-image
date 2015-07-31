@@ -11,11 +11,10 @@ namespace rere\image\controllers;
 use Imagine\Image\Box;
 use Imagine\Image\Color;
 use Imagine\Image\ImageInterface;
-use Imagine\Image\ManipulatorInterface;
 use Imagine\Image\Point;
+use rere\image\helpers\Image;
 use Yii;
 use yii\helpers\FileHelper;
-use yii\imagine\Image;
 use yii\web\Controller;
 use yii\web\Response;
 
@@ -46,56 +45,7 @@ class ImageController extends Controller
         if (file_exists($dir . $name))
             $this->printFile($dir . $name);
 
-        $image = Image::getImagine()->open(Yii::getAlias($fromDir . $name));
-
-        // Уменьшаем размеры
-        $k = $image->getSize()->getWidth() / $image->getSize()->getHeight();
-
-        if(!$width) $width = $height * $k;
-        if(!$height) $height = $width / $k;
-
-        $newWidth = $image->getSize()->getWidth();
-        if ($newWidth > $width) $newWidth = $k > 1 ? $width * $k : $width;
-
-        $newHeight = $image->getSize()->getHeight();
-        if ($newHeight > $height) $newHeight = $k < 1 ? $height / $k : $height;
-
-        $image->resize(new Box($newWidth, $newHeight), ImageInterface::FILTER_LANCZOS);
-
-        $box = new Box($width, $height);
-
-        // Обрезаем лишнее
-        $startX = 0;
-        $startY = 0;
-        $size = $image->getSize();
-        if ($size->getWidth() > $width) {
-            $startX = ceil($size->getWidth() - $width) / 2;
-        }
-        if ($size->getHeight() > $height) {
-            $startY = ceil($size->getHeight() - $height) / 2;
-        }
-
-        $image->crop(new Point($startX, $startY), $box);
-
-        // Делаем белый фон
-        if ($size->getWidth() < $width || $size->getHeight() < $height) {
-            $thumb = Image::getImagine()->create(new Box($width, $height), new Color('FFF', 100));
-
-            $size = $image->getSize();
-
-            $startX = 0;
-            $startY = 0;
-            if ($size->getWidth() < $width) {
-                $startX = ceil($width - $size->getWidth()) / 2;
-            }
-            if ($size->getHeight() < $height) {
-                $startY = ceil($height - $size->getHeight()) / 2;
-            }
-            $thumb->paste($image, new Point($startX, $startY));
-        } else
-            $thumb = $image;
-
-        $thumb->interlace(ImageInterface::INTERLACE_PARTITION);
+        $thumb = Image::thumbnail(Yii::getAlias($fromDir . $name), $width, $height);
 
         $thumb->save($dir . $name, [
             'quality' => $this->quality,
