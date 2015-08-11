@@ -6,10 +6,11 @@
  */
 
 namespace rere\image\helpers;
+
 use Imagine\Image\Box;
-use Imagine\Image\Color;
 use Imagine\Image\ImageInterface;
 use Imagine\Image\ImagineInterface;
+use Imagine\Image\Palette\Color\RGB;
 use Imagine\Image\Point;
 use Yii;
 use yii\base\InvalidConfigException;
@@ -71,7 +72,7 @@ class Image
      */
     protected static function createImagine()
     {
-        foreach ((array) static::$driver as $driver) {
+        foreach ((array)static::$driver as $driver) {
             switch ($driver) {
                 case self::DRIVER_GMAGICK:
                     if (class_exists('Gmagick', false)) {
@@ -92,7 +93,7 @@ class Image
                     throw new InvalidConfigException("Unknown driver: $driver");
             }
         }
-        throw new InvalidConfigException("Your system does not support any of these drivers: " . implode(',', (array) static::$driver));
+        throw new InvalidConfigException("Your system does not support any of these drivers: " . implode(',', (array)static::$driver));
     }
 
     /**
@@ -103,7 +104,7 @@ class Image
         self::$_imagine = $imagine;
     }
 
-    public static function thumbnail($filename, $width = 0, $height = 0)
+    public static function thumbnail($filename, $width = 0, $height = 0, $inside = true)
     {
 
         $image = self::getImagine()->open($filename);
@@ -111,13 +112,17 @@ class Image
         // Уменьшаем размеры
         $k = $image->getSize()->getWidth() / $image->getSize()->getHeight();
 
-        if(!$width) $width = $height * $k;
-        if(!$height) $height = $width / $k;
+        if (!$width) $width = $height * $k;
+        if (!$height) $height = $width / $k;
 
         $newWidth = $width;
         $newHeight = $height;
 
-        if($newWidth/$newHeight > $k) $newWidth = round($newHeight * $k);
+        if ($inside) {
+            $newWidth = $k > 1 ? $newWidth * $k : $newWidth / $k;
+            $newHeight = $k > 1 ? $newHeight * $k : $newHeight / $k;
+        }
+        if ($newWidth / $newHeight > $k) $newWidth = round($newHeight * $k);
         else $newHeight = round($newWidth / $k);
 
         $image->resize(new Box($newWidth, $newHeight), ImageInterface::FILTER_LANCZOS);
@@ -139,7 +144,7 @@ class Image
 
         // Делаем белый фон
         if ($size->getWidth() < $width || $size->getHeight() < $height) {
-            $thumb = Image::getImagine()->create(new Box($width, $height), new Color('FFF', 100));
+            $thumb = Image::getImagine()->create(new Box($width, $height));
 
             $size = $image->getSize();
 
