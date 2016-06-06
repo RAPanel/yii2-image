@@ -5,12 +5,11 @@
  * @license http://www.yiiframework.com/license/
  */
 
-namespace rere\image\helpers;
+namespace ra\helpers;
 
 use Imagine\Image\Box;
 use Imagine\Image\ImageInterface;
 use Imagine\Image\ImagineInterface;
-use Imagine\Image\Palette\Color\RGB;
 use Imagine\Image\Point;
 use Yii;
 use yii\base\InvalidConfigException;
@@ -45,6 +44,10 @@ class Image
      */
     const DRIVER_GMAGICK = 'gmagick';
 
+    const IMAGE_RESIZE = 0;
+    const IMAGE_CROP = 1;
+    const IMAGE_BOX = 2;
+
     /**
      * @var array|string the driver to use. This can be either a single driver name or an array of driver names.
      * If the latter, the first available driver will be used.
@@ -56,6 +59,85 @@ class Image
      */
     private static $_imagine;
 
+    public static function thumbnail($filename, $width = 0, $height = 0, $crop = self::IMAGE_RESIZE)
+    {
+        $image = self::getImagine()->open($filename);
+
+        // Уменьшаем размеры
+        $k = $image->getSize()->getWidth() / $image->getSize()->getHeight();
+
+        if (!$width) $width = $height * $k;
+        if (!$height) $height = $width / $k;
+
+        // Считаем насколько и больше ли новые размеры
+        $resize = min($width / $image->getSize()->getWidth(), $height / $image->getSize()->getHeight());
+        if ($resize < 1) $resize = 1;
+
+        // Не увеличиваем, если размер маленький
+        $resizeWidth = $width / $resize;
+        $resizeHeight = $height / $resize;
+
+        // если пропорции равны - делаем просто ресайз
+        if ($k == $resizeWidth / $resizeHeight) $crop = self::IMAGE_RESIZE;
+
+        switch ($crop):
+            case self::IMAGE_BOX:
+            case self::IMAGE_RESIZE:
+                $smaller = max($image->getSize()->getWidth() / $resizeWidth, $image->getSize()->getHeight() / $resizeHeight);
+                break;
+            case self::IMAGE_CROP:
+                $smaller = min($image->getSize()->getWidth() / $resizeWidth, $image->getSize()->getHeight() / $resizeHeight);
+                break;
+            default:
+                $smaller = 1;
+        endswitch;
+
+        list($resizeWidth, $resizeHeight) = [$image->getSize()->getWidth() / $smaller, $image->getSize()->getHeight() / $smaller];
+
+        $image->resize(new Box($resizeWidth, $resizeHeight), ImageInterface::FILTER_LANCZOS);
+
+        if ($crop) {
+            $box = new Box($width, $height);
+
+            if($crop == self::IMAGE_CROP){
+                // Обрезаем лишнее
+                $startX = 0;
+                $startY = 0;
+                if ($image->getSize()->getWidth() > $width) {
+                    $startX = ceil($image->getSize()->getWidth() - $width) / 2;
+                }
+                if ($image->getSize()->getHeight() > $height) {
+                    $startY = ceil($image->getSize()->getHeight() - $height) / 2;
+                }
+                $image->crop(new Point($startX, $startY), $box);
+            }
+
+
+            // Делаем белый фон
+            if (($image->getSize()->getWidth() < round($width) || $image->getSize()->getHeight() < round($height))) {
+                $thumb = Image::getImagine()->create($box);
+
+                $size = $image->getSize();
+
+                $startX = 0;
+                $startY = 0;
+                if ($size->getWidth() < $box->getWidth()) {
+                    $startX = ceil($box->getWidth() - $size->getWidth()) / 2;
+                }
+                if ($size->getHeight() < $box->getHeight()) {
+                    $startY = ceil($box->getHeight() - $size->getHeight()) / 2;
+                }
+                $thumb->paste($image, new Point($startX, $startY));
+            } else
+                $thumb = $image;
+        } else
+            $thumb = $image;
+
+        $thumb->interlace(ImageInterface::INTERLACE_PARTITION);
+
+        return $thumb;
+    }
+
     public static function getImagine()
     {
         if (self::$_imagine === null) {
@@ -63,6 +145,14 @@ class Image
         }
 
         return self::$_imagine;
+    }
+
+    /**
+     * @param ImagineInterface $imagine the `Imagine` object.
+     */
+    public static function setImagine($imagine)
+    {
+        self::$_imagine = $imagine;
     }
 
     /**
@@ -94,74 +184,5 @@ class Image
             }
         }
         throw new InvalidConfigException("Your system does not support any of these drivers: " . implode(',', (array)static::$driver));
-    }
-
-    /**
-     * @param ImagineInterface $imagine the `Imagine` object.
-     */
-    public static function setImagine($imagine)
-    {
-        self::$_imagine = $imagine;
-    }
-
-    public static function thumbnail($filename, $width = 0, $height = 0, $inside = true)
-    {
-
-        $image = self::getImagine()->open($filename);
-
-        // Уменьшаем размеры
-        $k = $image->getSize()->getWidth() / $image->getSize()->getHeight();
-
-        if (!$width) $width = $height * $k;
-        if (!$height) $height = $width / $k;
-
-        $newWidth = $width;
-        $newHeight = $height;
-
-        if ($inside) {
-            $newWidth = $k > 1 ? $newWidth * $k : $newWidth / $k;
-            $newHeight = $k > 1 ? $newHeight * $k : $newHeight / $k;
-        }
-        if ($newWidth / $newHeight > $k) $newWidth = round($newHeight * $k);
-        else $newHeight = round($newWidth / $k);
-
-        $image->resize(new Box($newWidth, $newHeight), ImageInterface::FILTER_LANCZOS);
-
-        $box = new Box($width, $height);
-
-        // Обрезаем лишнее
-        $startX = 0;
-        $startY = 0;
-        $size = $image->getSize();
-        if ($size->getWidth() > $width) {
-            $startX = ceil($size->getWidth() - $width) / 2;
-        }
-        if ($size->getHeight() > $height) {
-            $startY = ceil($size->getHeight() - $height) / 2;
-        }
-
-        $image->crop(new Point($startX, $startY), $box);
-
-        // Делаем белый фон
-        if ($size->getWidth() < $width || $size->getHeight() < $height) {
-            $thumb = Image::getImagine()->create(new Box($width, $height));
-
-            $size = $image->getSize();
-
-            $startX = 0;
-            $startY = 0;
-            if ($size->getWidth() < $width) {
-                $startX = ceil($width - $size->getWidth()) / 2;
-            }
-            if ($size->getHeight() < $height) {
-                $startY = ceil($height - $size->getHeight()) / 2;
-            }
-            $thumb->paste($image, new Point($startX, $startY));
-        } else
-            $thumb = $image;
-
-        $thumb->interlace(ImageInterface::INTERLACE_PARTITION);
-
-        return $thumb;
     }
 }

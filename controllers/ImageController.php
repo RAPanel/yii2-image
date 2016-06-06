@@ -6,16 +6,12 @@
  * Time: 23:48
  */
 
-namespace rere\image\controllers;
+namespace ra\admin\controllers;
 
-use Imagine\Image\Box;
-use Imagine\Image\Color;
-use Imagine\Image\ImageInterface;
 use Imagine\Image\Point;
-use rere\image\helpers\Image;
+use ra\admin\helpers\Image;
 use Yii;
 use yii\helpers\FileHelper;
-use yii\web\Controller;
 use yii\web\Response;
 
 class ImageController extends Controller
@@ -30,9 +26,17 @@ class ImageController extends Controller
         if (file_exists($dir . $name))
             $this->printFile($dir . $name);
 
-        if (!file_exists($dir)) FileHelper::createDirectory($dir);
+        FileHelper::createDirectory($dir);
 
-        list($width, $height) = explode('x', $type);
+        $crop = 1;
+        if (strpos($type, 'x') !== false) {
+            list($width, $height) = explode('x', trim($type, '!^'));
+            if (!$width || !$height || strpos($type, '^')) $crop = 0;
+            elseif (strpos($type, '!')) $crop = 2;
+        } else {
+            $width = $height = $type;
+            $crop = 0;
+        }
 
         $fromDir = Yii::getAlias("@webroot/{$this->dir}/tmp/");
         $from = $fromDir . $name;
@@ -42,10 +46,7 @@ class ImageController extends Controller
             file_put_contents($fromDir . $name, base64_decode($this->default));
         }
 
-        if (file_exists($dir . $name))
-            $this->printFile($dir . $name);
-
-        $thumb = Image::thumbnail(Yii::getAlias($fromDir . $name), $width, $height);
+        $thumb = Image::thumbnail(Yii::getAlias($fromDir . $name), $width, $height, $crop);
 
         $thumb->save($dir . $name, [
             'quality' => $this->quality,

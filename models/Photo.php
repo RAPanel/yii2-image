@@ -1,10 +1,13 @@
 <?php
 
-namespace rere\image\models;
+namespace ra\models;
 
+use Exception;
+use ra\admin\helpers\Image;
 use Yii;
-use yii\base\Exception;
 use yii\helpers\FileHelper;
+use yii\helpers\Html;
+use yii\helpers\Inflector;
 use yii\helpers\Url;
 
 /**
@@ -13,7 +16,7 @@ use yii\helpers\Url;
  * @property string $id
  * @property string $sort_id
  * @property string $owner_id
- * @property integer $model
+ * @property string $model
  * @property string $type
  * @property string $name
  * @property string $width
@@ -26,8 +29,8 @@ use yii\helpers\Url;
  */
 class Photo extends \yii\db\ActiveRecord
 {
-    public static $path = '/image/tmp';
-    public $file;
+    public static $tmpPath = 'image/tmp';
+    public static $path = 'image';
 
     /**
      * @inheritdoc
@@ -37,15 +40,46 @@ class Photo extends \yii\db\ActiveRecord
         return '{{%photo}}';
     }
 
-    public static function add($name, $params)
+    public static function add($file, $about, $owner_id, $options)
     {
-        $defaultParams = [
-            'type' => 'main',
-        ];
-        $params['name'] = $name;
-        $model = new self;
-        $model->setAttributes(array_merge($defaultParams, $params));
-        return $model->save();
+        preg_match('#.\w{1,4}$#', basename($file), $ext);
+        $filename = preg_replace('#.\w{1,4}$#', '', basename($file));
+        $newFile = Yii::getAlias('@app/../' . self::$tmpPath . '/') . strtolower(Inflector::slug($filename) . $ext[0]);
+
+        if (file_exists($newFile)) {
+            $existFile = $newFile;
+            $newFile = str_replace(basename($existFile), uniqid() . '-' . basename($file), $existFile);
+        } else
+            FileHelper::createDirectory(dirname($newFile));
+
+        if (Image::thumbnail($file, 1920)->save($newFile, [
+            'quality' => 100,
+            'png_compression_level' => 9,
+        ])
+        ) {
+            unlink($file);
+            if (isset($existFile) && md5_file($existFile) == md5_file($newFile)) {
+                $file = $existFile;
+                unlink($existFile);
+                copy($newFile, $existFile);
+                unlink($newFile);
+                $model = self::findOne(['name' => basename($file), 'owner_id' => $owner_id]);
+            } else
+                $file = $newFile;
+        }
+
+        list($width, $height) = getimagesize($file);
+        $hash = md5_file($file);
+        $name = basename($file);
+
+        if (empty($model)) $model = new self;
+        if (is_string($options)) $options = ['model' => $options];
+        $model->setAttributes(compact('owner_id', 'name', 'width', 'height', 'about', 'hash') + $options);
+
+        if ($model->save())
+            return $model;
+
+        throw new \yii\base\Exception(print_r($model->errors, 1));
     }
 
     /**
@@ -54,12 +88,12 @@ class Photo extends \yii\db\ActiveRecord
     public function rules()
     {
         return [
-            [['name'], 'required'],
-            [['sort_id', 'width', 'height'], 'integer'],
+            [['sort_id', 'owner_id', 'model', 'type', 'name', 'width', 'height', 'cropParams', 'hash'], 'required'],
+            [['sort_id', 'owner_id', 'width', 'height'], 'integer'],
             [['updated_at', 'created_at'], 'safe'],
+            [['model', 'hash'], 'string', 'max' => 32],
             [['type'], 'string', 'max' => 8],
-            [['name', 'about', 'cropParams'], 'string', 'max' => 255],
-            [['hash'], 'string', 'max' => 32]
+            [['name', 'about', 'cropParams'], 'string', 'max' => 255]
         ];
     }
 
@@ -69,18 +103,43 @@ class Photo extends \yii\db\ActiveRecord
     public function attributeLabels()
     {
         return [
-            'id' => Yii::t('rere.model', 'ID'),
-            'sort_id' => Yii::t('rere.model', 'Sort ID'),
-            'type' => Yii::t('rere.model', 'Type'),
-            'name' => Yii::t('rere.model', 'Name'),
-            'width' => Yii::t('rere.model', 'Width'),
-            'height' => Yii::t('rere.model', 'Height'),
-            'about' => Yii::t('rere.model', 'About'),
-            'cropParams' => Yii::t('rere.model', 'Crop Params'),
-            'hash' => Yii::t('rere.model', 'Hash'),
-            'updated_at' => Yii::t('rere.model', 'Updated At'),
-            'created_at' => Yii::t('rere.model', 'Created At'),
+            'id' => Yii::t('ra', 'ID'),
+            'sort_id' => Yii::t('ra', 'Sort ID'),
+            'owner_id' => Yii::t('ra', 'Owner ID'),
+            'model' => Yii::t('ra', 'Model'),
+            'type' => Yii::t('ra', 'Type'),
+            'name' => Yii::t('ra', 'Name'),
+            'width' => Yii::t('ra', 'Width'),
+            'height' => Yii::t('ra', 'Height'),
+            'about' => Yii::t('ra', 'About'),
+            'cropParams' => Yii::t('ra', 'Crop Params'),
+            'hash' => Yii::t('ra', 'Hash'),
+            'updated_at' => Yii::t('ra', 'Updated At'),
+            'created_at' => Yii::t('ra', 'Created At'),
         ];
+    }
+
+    public function init()
+    {
+        $this->on(self::EVENT_BEFORE_VALIDATE, function ($event) {
+            if (is_null($event->sender->type))
+                $event->sender->type = 'main';
+            if (is_null($event->sender->sort_id))
+                $event->sender->sort_id = 999;
+            if (is_null($event->sender->cropParams))
+                $event->sender->cropParams = serialize([]);
+            if (!$event->sender->about)
+                $event->sender->about = preg_replace('#.\w+$#iu', '', $event->sender->name);
+        });
+        parent::init();
+    }
+
+    /**
+     * @return \yii\db\ActiveQuery
+     */
+    public function getPage()
+    {
+        return $this->hasOne(Page::className(), ['id' => 'owner_id']);
     }
 
     public function beforeSave($insert)
@@ -90,8 +149,6 @@ class Photo extends \yii\db\ActiveRecord
                 list($this->width, $this->height) = getimagesize($file);
                 $this->hash = md5_file($file);
             } else throw new Exception('File not found in tmp dir ' . $file);
-            if (isset(Yii::$app->user) && Yii::$app->user->id)
-                $this->user_id = Yii::$app->user->id;
         }
 
         return parent::beforeSave($insert);
@@ -99,12 +156,37 @@ class Photo extends \yii\db\ActiveRecord
 
     public function getFile($global = false)
     {
-        return $this->name ? Yii::getAlias(($global ? '@webroot' : '') . self::$path . DIRECTORY_SEPARATOR . $this->name) : null;
+        return Yii::getAlias(($global ? '@app/..' : '@web') . '/' . self::$tmpPath . '/' . $this->name);
     }
 
-    public function getHref($type, $scheme = false)
+    public function getImg($size, $options = [])
     {
-        return Url::to(['/image/index', 'type' => $type, 'name' => $this->name], $scheme);
+        if (empty($options['alt'])) $options['alt'] = $this->about;
+        $options = array_merge($options, $this->getSizes($size));
+        return Html::img($this->getHref($size), $options);
+    }
+
+    public function getSizes($size)
+    {
+        if (strpos($size, 'x') !== false)
+            list($width, $height) = explode('x', $size);
+        else $width = $height = (int)$size;
+        $k = $this->width / $this->height;
+        if (!$width || !$height || $width == $height)
+            if ($k > 1) $height = $width / $k;
+            else $width = $height * $k;
+        if ($width > $this->width) $width = $this->width;
+        if ($height > $this->height) $height = $this->height;
+
+        return [
+            'width' => round($width),
+            'height' => round($height),
+        ];
+    }
+
+    public function getHref($size, $scheme = false)
+    {
+        return Url::to(['/image/index', 'type' => $size, 'name' => $this->name], $scheme);
     }
 
     public function beforeDelete()
